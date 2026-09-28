@@ -7,7 +7,7 @@
 
 粘贴一段小说或视频文案,几秒钟蒸馏成摘要、情节人物卡片,或读书笔记——不用自己再读一遍全文。
 
-**[在线体验 →](https://your-project.vercel.app)**（部署后替换为真实链接）
+**[在线体验 →](https://content-distiller-ruby.vercel.app)**
 
 <!-- 部署后替换成实际效果截图或 GIF -->
 <!-- ![demo](./docs/demo.gif) -->
