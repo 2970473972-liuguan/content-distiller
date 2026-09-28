@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 type Mode = "summary" | "plot-cards" | "reading-notes";
 
 const MAX_INPUT_LENGTH = 50_000;
+const MAX_MODEL_LENGTH = 100;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 12;
+const RATE_LIMIT_MAP_MAX = 10_000;
+
+const ALLOWED_MODELS = new Set(["deepseek-chat", "deepseek-flash", "deepseek-reasoner"]);
 
 const MODE_PROMPTS: Record<Mode, string> = {
   summary:
@@ -13,24 +19,67 @@ const MODE_PROMPTS: Record<Mode, string> = {
     "请从以下文本中提炼值得记录的读书笔记:核心观点、值得注意的细节、以及你的一句话点评。",
 };
 
+const rateHits = new Map<string, number[]>();
+
 function isValidMode(mode: unknown): mode is Mode {
   return typeof mode === "string" && mode in MODE_PROMPTS;
 }
 
+function getClientIp(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.headers.get("x-real-ip") || "unknown";
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const hits = (rateHits.get(ip) || []).filter(
+    (timestamp) => now - timestamp < RATE_LIMIT_WINDOW_MS
+  );
+
+  if (hits.length >= RATE_LIMIT_MAX) {
+    rateHits.set(ip, hits);
+    return true;
+  }
+
+  hits.push(now);
+  rateHits.set(ip, hits);
+
+  if (rateHits.size > RATE_LIMIT_MAP_MAX) {
+    const oldest = [...rateHits.keys()].slice(0, Math.floor(RATE_LIMIT_MAP_MAX / 2));
+    oldest.forEach((key) => rateHits.delete(key));
+  }
+
+  return false;
+}
+
+function pickModel(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value.trim()) {
+    const model = value.trim();
+    if (model.length > MAX_MODEL_LENGTH) {
+      return fallback;
+    }
+    return ALLOWED_MODELS.has(model) ? model : fallback;
+  }
+  return fallback;
+}
+
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
-  if (!apiKey) {
+  const ip = getClientIp(req);
+  if (isRateLimited(ip)) {
     return NextResponse.json(
-      { error: "服务器未配置 DEEPSEEK_API_KEY,请先在环境变量中设置。" },
-      { status: 500 }
+      { error: "请求过于频繁,请稍后再试。" },
+      { status: 429 }
     );
   }
 
   const body = await req.json().catch(() => null);
   const text: unknown = body?.text;
   const mode: unknown = body?.mode;
+  const clientApiKey: unknown = body?.apiKey;
+  const clientModel: unknown = body?.model;
 
   if (typeof text !== "string" || !text.trim()) {
     return NextResponse.json(
@@ -53,8 +102,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const serverApiKey = process.env.DEEPSEEK_API_KEY;
+  const apiKey =
+    typeof clientApiKey === "string" && clientApiKey.trim()
+      ? clientApiKey.trim()
+      : serverApiKey;
+
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "请在页面设置中填入你的 DeepSeek API Key。" },
+      { status: 500 }
+    );
+  }
+
+  const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+  const model = pickModel(clientModel, process.env.DEEPSEEK_MODEL || "deepseek-flash");
+
   try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -82,9 +147,9 @@ export async function POST(req: NextRequest) {
       console.error("DeepSeek API error:", response.status, errText);
       const hint =
         response.status === 401
-          ? "API Key 无效,请检查 DEEPSEEK_API_KEY。"
+          ? "API Key 无效,请检查后重试。"
           : response.status === 402
-          ? "DeepSeek 账户余额不足,请先充值。"
+          ? "该账户余额不足,请先充值。"
           : "调用大模型失败,请稍后再试。";
       return NextResponse.json({ error: hint }, { status: 502 });
     }

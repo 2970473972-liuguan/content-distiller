@@ -35,15 +35,21 @@ DeepSeek API
 浏览器渲染结果
 ```
 
-前后端在同一个 Next.js 项目里:页面用 React + Tailwind 写,`/app/api/summarize` 这个 API Route 负责在服务端调用大模型,浏览器端不会暴露 API Key。
+前后端在同一个 Next.js 项目里:页面用 React + Tailwind 写,`/app/api/summarize` 这个 API Route 负责在服务端调用大模型。访客可以在页面设置里填入自己的 DeepSeek Key,Key 只保存在浏览器本地,不会写入前端代码或日志。
 
 ## 技术栈
 
-- [Next.js 14](https://nextjs.org/)(App Router)
+- [Next.js 15](https://nextjs.org/)(App Router)
 - TypeScript
 - Tailwind CSS
-- DeepSeek API(OpenAI 兼容格式,通过环境变量可替换模型或其他兼容服务)
+- DeepSeek API(OpenAI 兼容格式,支持站长默认 Key 或访客个人 Key)
 - GitHub Actions(CI)+ Vercel(部署)
+
+## 使用自己的 Key
+
+线上页面右上角的「设置」里可以开启「使用我自己的 API Key」。开启后,请求会使用访客自己填写的 DeepSeek 额度和所选模型;未开启时使用站长配置的默认 Key。
+
+服务端对单 IP 做了基础限流(默认每分钟 12 次),避免被恶意刷接口。生产环境的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 通过 Vercel 环境变量配置。
 
 ## 本地运行
 
