@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "app/page.tsx": {
+      "regions": ["hkg1"]
+    },
+    "app/api/summarize/route.ts": {
+      "regions": ["hkg1"]
+    }
+  }
+}
